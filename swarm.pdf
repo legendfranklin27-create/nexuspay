@@ -1,0 +1,1490 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NexusPay P2P Transfer & AI Care</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <style>
+        /* Global styles to ensure clean layout and responsiveness */
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: 'Inter', sans-serif;
+            background-color: #0A0A0A;
+            min-height: 100vh; 
+        }
+        /* Spinner keyframes */
+        @keyframes spin {
+          to { transform: rotate(360deg); }
+        }
+        .animate-spin {
+          animation: spin 1s linear infinite;
+        }
+        .chat-bubble-user {
+            background-color: #4f46e5; /* Indigo-600 */
+            border-bottom-right-radius: 0;
+        }
+        .chat-bubble-ai {
+            background-color: #1f2937; /* Gray-800 */
+            border-bottom-left-radius: 0;
+        }
+        /* Custom scrollbar for chat window */
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 8px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background-color: #4f46e5;
+            border-radius: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background-color: #1f2937;
+        }
+        /* Auth Screen specific styles */
+        .auth-screen {
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            background-color: #0A0A0A;
+        }
+        /* Animation for shake */
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            20%, 60% { transform: translateX(-10px); }
+            40%, 80% { transform: translateX(10px); }
+        }
+        .animate-shake {
+            animation: shake 0.5s;
+        }
+        .pin-dot {
+            transition: all 0.2s ease-in-out;
+        }
+    </style>
+</head>
+<body>
+
+<div id="root"></div>
+
+<!-- 
+    CRITICAL FIX: Define global variables outside of the module/babel scope 
+    so they are available immediately for Firebase initialization.
+-->
+<script>
+    // Global variables provided by the environment 
+    window.appId = typeof __app_id !== 'undefined' ? __app_id : 'nexuspay-default-app';
+    window.firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+    window.initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+    // Helper to generate a mock 10-digit account number
+    window.generateAccountNumber = () => {
+        return Array(10).fill(0).map(() => Math.floor(Math.random() * 10)).join('');
+    };
+</script>
+
+<script type="text/babel">
+const { useState, useEffect, useRef, useMemo } = React;
+
+// --- ICON COMPONENTS (using Lucide icons) ---
+const Send = (props) => <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m22 2-7 20-4-9-9-4 20-7Z"/><path d="M12 12 19 5"/></svg>;
+const Zap = (props) => <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>;
+const Wallet = (props) => <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 7V4a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v12h-3"/><path d="M14 11v1a2 2 0 0 0 2 2h2v4a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h10z"/></svg>;
+const CreditCard = (props) => <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="20" height="14" x="2" y="5" rx="2"/><line x1="2" x2="22" y1="10" y2="10"/></svg>;
+const ChevronRight = (props) => <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6"/></svg>;
+const Search = (props) => <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>;
+const Loader2 = (props) => <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>;
+const MessageSquare = (props) => <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>;
+const Users = (props) => <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>;
+const Home = (props) => <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>;
+const PieChart = (props) => <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21.21 15.89A10 10 0 1 1 8 2.83"/><path d="M22 12A10 10 0 0 0 12 2v10z"/></svg>;
+const LogOut = (props) => <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/></svg>;
+const X = (props) => <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>;
+const Lock = (props) => <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>;
+const User = (props) => <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>;
+const Mail = (props) => <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>;
+
+
+// --- FIREBASE MOCK/INLINE IMPORTS ---
+// Define placeholders for Babel, relying on global export in the final module script.
+const initializeApp = (config) => window.firebaseApp || { /* mock app */ };
+const getAuth = (app) => window.firebaseAuth || { /* mock auth */ };
+const getFirestore = (app) => window.firebaseDb || { /* mock db */ };
+const setLogLevel = (level) => console.log(`Setting Firebase Log Level: ${level}`);
+
+// --- LLM API CONFIGURATION AND FUNCTIONS (Same as previous version) ---
+const API_KEY = ""; 
+const MODEL_NAME = "gemini-2.5-flash-preview-09-2025";
+const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL_NAME}:generateContent?key=${API_KEY}`;
+const STARTING_BALANCE = 1000000; 
+
+// JSON Schema for structured categorization output
+const CATEGORY_SCHEMA = {
+  type: "OBJECT",
+  properties: {
+    category: {
+      type: "STRING",
+      description: "The primary category from the predefined list: ['P2P Transfer', 'Bank Transfer', 'Bills', 'Groceries', 'Food & Dining', 'Transport', 'Utilities', 'Shopping', 'Other']. If uncertain, use 'Other'."
+    },
+    confidence: {
+      type: "NUMBER",
+      description: "A confidence score between 0.0 and 1.0 indicating certainty of the categorization."
+    }
+  },
+  required: ["category", "confidence"]
+};
+
+const ALL_CATEGORIES = ['Income', 'Bills', 'Groceries', 'Food & Dining', 'Transport', 'Utilities', 'Shopping', 'P2P Transfer', 'Bank Transfer', 'Other'];
+
+const getCategoryColor = (category) => {
+    switch (category) {
+        case 'Income': return 'text-green-400 bg-green-900/50 border-green-500'; 
+        case 'Bills': return 'text-red-400 bg-red-900/50 border-red-500'; 
+        case 'Groceries': return 'text-yellow-400 bg-yellow-900/50 border-yellow-500';
+        case 'Food & Dining': return 'text-pink-300 bg-pink-900/50 border-pink-500';
+        case 'Transport': return 'text-blue-400 bg-blue-900/50 border-blue-500';
+        case 'P2P Transfer': return 'text-indigo-300 bg-indigo-900/50 border-indigo-500';
+        case 'Bank Transfer': return 'text-purple-300 bg-purple-900/50 border-purple-500';
+        case 'Shopping': return 'text-orange-300 bg-orange-900/50 border-orange-500';
+        case 'Utilities': return 'text-cyan-300 bg-cyan-900/50 border-cyan-500';
+        default: return 'text-gray-400 bg-gray-700/50 border-gray-500'; 
+    }
+};
+
+const categorizeTransactionWithGemini = async (description) => {
+  const systemPrompt = "You are a highly accurate financial categorization engine. Analyze the transaction description and strictly categorize it into one of the following categories: ['P2P Transfer', 'Bank Transfer', 'Bills', 'Groceries', 'Food & Dining', 'Transport', 'Utilities', 'Shopping', 'Other']. Provide the output in the required JSON schema format.";
+  const userQuery = `Categorize the following transaction description: "${description}"`;
+
+  const payload = {
+    contents: [{ parts: [{ text: userQuery }] }],
+    systemInstruction: { parts: [{ text: systemPrompt }] },
+    generationConfig: {
+      responseMimeType: "application/json",
+      responseSchema: CATEGORY_SCHEMA,
+    }
+  };
+
+  let retries = 0;
+  const maxRetries = 5;
+
+  while (retries < maxRetries) {
+    try {
+      const response = await fetch(API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      if (!response.ok) {
+        if (response.status === 429 && retries < maxRetries - 1) {
+          const delay = Math.pow(2, retries) * 1000;
+          await new Promise(res => setTimeout(res, delay));
+          retries++;
+          continue;
+        }
+        throw new Error(`API request failed with status: ${response.status}`);
+      }
+
+      const result = await response.json();
+      const jsonText = result.candidates?.[0]?.content?.parts?.[0]?.text;
+
+      if (jsonText) {
+        const parsedJson = JSON.parse(jsonText);
+        if (!ALL_CATEGORIES.includes(parsedJson.category)) {
+            parsedJson.category = 'Other'; 
+        }
+        return parsedJson;
+      }
+      throw new Error("Invalid response format from Gemini API.");
+    } catch (error) {
+      console.warn(`Categorization attempt ${retries + 1} failed (retrying...):`, error.message);
+      if (retries === maxRetries - 1) throw error;
+      const delay = Math.pow(2, retries) * 1000;
+      await new Promise(res => setTimeout(res, delay));
+      retries++;
+    }
+  }
+  return { category: 'Other', confidence: 0.0 }; // Default fallback after failure
+};
+
+const handleChatWithGemini = async (chatHistory) => {
+    const systemPrompt = "You are NexusPay, a helpful, secure, and friendly AI Customer Care agent specializing in Nigerian banking and digital payments. Keep answers concise, empathetic, and professional. Always prioritize security. Do not ask for sensitive information like PINs, passwords, or full account numbers. Base your answers on general banking knowledge, focusing on P2P transfers, transaction inquiries, account issues, and app usage.";
+    
+    const payload = {
+        contents: chatHistory,
+        systemInstruction: { parts: [{ text: systemPrompt }] },
+    };
+
+    let retries = 0;
+    const maxRetries = 5;
+
+    while (retries < maxRetries) {
+        try {
+            const response = await fetch(API_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            if (!response.ok) {
+                if (response.status === 429 && retries < maxRetries - 1) {
+                    const delay = Math.pow(2, retries) * 1000;
+                    await new Promise(res => setTimeout(res, delay));
+                    retries++;
+                    continue;
+                }
+                throw new Error(`API request failed with status: ${response.status}`);
+            }
+
+            const result = await response.json();
+            const text = result.candidates?.[0]?.content?.parts?.[0]?.text;
+
+            if (text) {
+                return text;
+            }
+            throw new Error("Invalid response format from Gemini API.");
+
+        } catch (error) {
+            console.error("Chat attempt failed:", error);
+            if (retries === maxRetries - 1) throw error;
+            const delay = Math.pow(2, retries) * 1000;
+            await new Promise(res => setTimeout(res, delay));
+            retries++;
+        }
+    }
+    return "I'm sorry, I'm experiencing technical difficulties and cannot connect to the system right now. Please try again in a moment.";
+};
+
+
+// --- AUTHENTICATION COMPONENTS ---
+
+const AuthLayout = ({ title, children, message, type, linkText, onLinkClick }) => {
+    const messageClasses = type === 'error' ? 'bg-red-900/30 text-red-400' : 'bg-green-900/30 text-green-400';
+    
+    return (
+        <div className="auth-screen p-6">
+            <div className="w-full max-w-md p-8 bg-gray-800 rounded-2xl shadow-2xl border border-gray-700">
+                <div className="text-center mb-8">
+                    <Lock className="w-10 h-10 mx-auto text-indigo-400 mb-3" strokeWidth="1.5" />
+                    <h1 className="text-3xl font-extrabold text-white">{title}</h1>
+                </div>
+
+                {message && (
+                    <div className={`p-3 rounded-xl mb-6 font-medium text-sm ${messageClasses}`}>
+                        {message}
+                    </div>
+                )}
+
+                {children}
+
+                {linkText && (
+                    <div className="mt-6 text-center">
+                        <button onClick={onLinkClick} className="text-sm font-semibold text-indigo-400 hover:text-indigo-300 transition-colors">
+                            {linkText}
+                        </button>
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+};
+
+const SignupView = ({ onAuthSuccess, setView, auth, db, appId, setNotification }) => {
+    const [email, setEmail] = useState('');
+    const [password, setPassword] = useState('');
+    const [isLoading, setIsLoading] = useState(false);
+    const [message, setMessage] = useState(null);
+    const [messageType, setMessageType] = useState('error');
+    
+    const handleSignup = async (e) => {
+        e.preventDefault();
+        setMessage(null);
+        setIsLoading(true);
+
+        // Firebase uses email/password, here email represents the user's phone number/username
+        // We ensure it's in a valid email format for Firebase
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(email)) {
+            setMessage("Please enter a valid email format (e.g., user@example.com) for registration.");
+            setMessageType('error');
+            setIsLoading(false);
+            return;
+        }
+
+        if (password.length < 6) {
+            setMessage("Password must be at least 6 characters long.");
+            setMessageType('error');
+            setIsLoading(false);
+            return;
+        }
+
+        try {
+            const userCredential = await window.createUserWithEmailAndPassword(auth, email, password);
+            const user = userCredential.user;
+
+            // 1. Generate and save Account Number & Initial Balance (Private Data)
+            const accountNumber = window.generateAccountNumber();
+            const userDataPath = `artifacts/${appId}/users/${user.uid}/user_data/profile`;
+            const balancePath = `artifacts/${appId}/users/${user.uid}/user_data/balance`;
+            
+            // Save Profile (including Account Number)
+            await window.setDoc(window.doc(db, userDataPath), {
+                email: user.email,
+                accountNumber: accountNumber,
+                createdAt: new Date(),
+            });
+
+            // Set Initial Balance
+            await window.setDoc(window.doc(db, balancePath), {
+                balance: STARTING_BALANCE,
+                lastUpdated: new Date(),
+            });
+
+            setNotification({ type: 'info', message: `Welcome! Your Account Number is ${accountNumber}.` });
+            onAuthSuccess(user.uid);
+
+        } catch (error) {
+            console.error("Signup Error:", error.code, error.message);
+            let userMessage = "Registration failed. Please try again.";
+            if (error.code === 'auth/email-already-in-use') {
+                userMessage = "This email is already registered. Try logging in.";
+            } else if (error.code === 'auth/weak-password') {
+                 userMessage = "Password is too weak. Must be at least 6 characters.";
+            } else if (error.code === 'auth/invalid-email') {
+                 userMessage = "Invalid email format.";
+            }
+            setMessage(userMessage);
+            setMessageType('error');
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    return (
+        <AuthLayout 
+            title="NexusPay Signup"
+            message={message}
+            type={messageType}
+            linkText="Already have an account? Login here"
+            onLinkClick={() => setView('login')}
+        >
+            <form onSubmit={handleSignup} className="space-y-4">
+                <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-1">Email (Used for Login)</label>
+                    <div className="relative">
+                        <Mail className="w-5 h-5 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+                        <input
+                            type="email"
+                            placeholder="user@example.com"
+                            value={email}
+                            onChange={(e) => setEmail(e.target.value)}
+                            className="w-full bg-gray-700 text-white rounded-xl py-3 pl-10 pr-4 focus:ring-2 focus:ring-indigo-500 focus:outline-none text-sm"
+                            required
+                        />
+                    </div>
+                </div>
+                <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-1">Password (min 6 characters)</label>
+                    <div className="relative">
+                        <Lock className="w-5 h-5 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+                        <input
+                            type="password"
+                            placeholder="••••••"
+                            value={password}
+                            onChange={(e) => setPassword(e.target.value)}
+                            className="w-full bg-gray-700 text-white rounded-xl py-3 pl-10 pr-4 focus:ring-2 focus:ring-indigo-500 focus:outline-none text-sm"
+                            required
+                        />
+                    </div>
+                </div>
+                <button
+                    type="submit"
+                    className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3 rounded-xl shadow-lg transition duration-200 active:scale-95 flex items-center justify-center space-x-2 disabled:opacity-50"
+                    disabled={isLoading}
+                >
+                    {isLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : <User className="w-5 h-5" />}
+                    <span>{isLoading ? 'Registering...' : 'Create Account'}</span>
+                </button>
+            </form>
+        </AuthLayout>
+    );
+};
+
+const LoginView = ({ onAuthSuccess, setView, auth }) => {
+    const [email, setEmail] = useState('');
+    const [password, setPassword] = useState('');
+    const [isLoading, setIsLoading] = useState(false);
+    const [message, setMessage] = useState(null);
+    const [messageType, setMessageType] = useState('error');
+
+    const handleLogin = async (e) => {
+        e.preventDefault();
+        setMessage(null);
+        setIsLoading(true);
+
+        try {
+            const userCredential = await window.signInWithEmailAndPassword(auth, email, password);
+            onAuthSuccess(userCredential.user.uid);
+        } catch (error) {
+            console.error("Login Error:", error.code, error.message);
+            let userMessage = "Login failed. Please check your credentials.";
+            if (error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password') {
+                userMessage = "Invalid email or password.";
+            }
+            setMessage(userMessage);
+            setMessageType('error');
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    return (
+        <AuthLayout 
+            title="NexusPay Login"
+            message={message}
+            type={messageType}
+            linkText="Don't have an account? Sign up here"
+            onLinkClick={() => setView('signup')}
+        >
+            <form onSubmit={handleLogin} className="space-y-4">
+                <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-1">Email (Username)</label>
+                    <div className="relative">
+                        <Mail className="w-5 h-5 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+                        <input
+                            type="email"
+                            placeholder="user@example.com"
+                            value={email}
+                            onChange={(e) => setEmail(e.target.value)}
+                            className="w-full bg-gray-700 text-white rounded-xl py-3 pl-10 pr-4 focus:ring-2 focus:ring-indigo-500 focus:outline-none text-sm"
+                            required
+                        />
+                    </div>
+                </div>
+                <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-1">Password</label>
+                    <div className="relative">
+                        <Lock className="w-5 h-5 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+                        <input
+                            type="password"
+                            placeholder="••••••"
+                            value={password}
+                            onChange={(e) => setPassword(e.target.value)}
+                            className="w-full bg-gray-700 text-white rounded-xl py-3 pl-10 pr-4 focus:ring-2 focus:ring-indigo-500 focus:outline-none text-sm"
+                            required
+                        />
+                    </div>
+                </div>
+                <button
+                    type="submit"
+                    className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3 rounded-xl shadow-lg transition duration-200 active:scale-95 flex items-center justify-center space-x-2 disabled:opacity-50"
+                    disabled={isLoading}
+                >
+                    {isLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : <User className="w-5 h-5" />}
+                    <span>{isLoading ? 'Signing In...' : 'Log In'}</span>
+                </button>
+            </form>
+            <div className="mt-4 text-center">
+                <button onClick={() => setView('forgot_password')} className="text-xs text-gray-400 hover:text-indigo-400 transition-colors">
+                    Forgot Password?
+                </button>
+            </div>
+        </AuthLayout>
+    );
+};
+
+const ForgotPasswordView = ({ setView, auth }) => {
+    const [email, setEmail] = useState('');
+    const [isLoading, setIsLoading] = useState(false);
+    const [message, setMessage] = useState(null);
+    const [messageType, setMessageType] = useState('error');
+
+    const handleReset = async (e) => {
+        e.preventDefault();
+        setMessage(null);
+        setIsLoading(true);
+
+        try {
+            await window.sendPasswordResetEmail(auth, email);
+            setMessage("Password reset link sent! Check your email inbox (and spam folder).");
+            setMessageType('success');
+            setEmail('');
+        } catch (error) {
+            console.error("Forgot Password Error:", error.code, error.message);
+            let userMessage = "Failed to send reset email. Please ensure the email is correct.";
+            if (error.code === 'auth/user-not-found') {
+                userMessage = "No user found with that email address.";
+            }
+            setMessage(userMessage);
+            setMessageType('error');
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    return (
+        <AuthLayout 
+            title="Reset Password"
+            message={message}
+            type={messageType}
+            linkText="Back to Login"
+            onLinkClick={() => setView('login')}
+        >
+            <form onSubmit={handleReset} className="space-y-4">
+                <p className="text-gray-400 text-sm mb-4">
+                    Enter your registered email address to receive a password reset link.
+                </p>
+                <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-1">Email</label>
+                    <div className="relative">
+                        <Mail className="w-5 h-5 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+                        <input
+                            type="email"
+                            placeholder="user@example.com"
+                            value={email}
+                            onChange={(e) => setEmail(e.target.value)}
+                            className="w-full bg-gray-700 text-white rounded-xl py-3 pl-10 pr-4 focus:ring-2 focus:ring-indigo-500 focus:outline-none text-sm"
+                            required
+                        />
+                    </div>
+                </div>
+                <button
+                    type="submit"
+                    className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3 rounded-xl shadow-lg transition duration-200 active:scale-95 flex items-center justify-center space-x-2 disabled:opacity-50"
+                    disabled={isLoading}
+                >
+                    {isLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Lock className="w-5 h-5" />}
+                    <span>{isLoading ? 'Sending Link...' : 'Send Reset Link'}</span>
+                </button>
+            </form>
+        </AuthLayout>
+    );
+};
+
+
+// --- NOTIFICATION COMPONENT ---
+const AppNotification = ({ notification, setNotification }) => {
+    useEffect(() => {
+        if (notification) {
+            const timer = setTimeout(() => {
+                setNotification(null);
+            }, 5000); 
+            return () => clearTimeout(timer);
+        }
+    }, [notification, setNotification]);
+
+    if (!notification) return null;
+
+    const { type, message } = notification;
+
+    const colorClasses = useMemo(() => {
+        switch (type) {
+            case 'security': return 'bg-red-600 border-red-400';
+            case 'alert': return 'bg-yellow-600 border-yellow-400';
+            case 'info': return 'bg-indigo-600 border-indigo-400';
+            case 'success': return 'bg-green-600 border-green-400';
+            default: return 'bg-gray-600 border-gray-400';
+        }
+    }, [type]);
+
+    return (
+        <div className={`fixed top-4 left-1/2 transform -translate-x-1/2 w-11/12 max-w-sm p-4 rounded-xl shadow-2xl transition-all duration-300 z-50 flex items-start space-x-3 ${colorClasses} text-white font-medium border-l-4`}
+             role="alert">
+            
+            <div className="flex-grow">
+                <p className="font-bold capitalize">{type} Alert</p>
+                <p className="text-sm mt-1">{message}</p>
+            </div>
+            
+            <button onClick={() => setNotification(null)} className="p-1 rounded-full hover:bg-white/20 transition-colors flex-shrink-0">
+                <X className="w-4 h-4"/>
+            </button>
+        </div>
+    );
+};
+
+
+// --- CORE APPLICATION COMPONENTS (Transfer, Care, Analysis Views) ---
+
+// Keypad Component (used only for Transfer Amount)
+const Keypad = ({ input, setInput, maxLength = 10 }) => {
+  const handleKeyClick = (key) => {
+    let newInput = input;
+
+    if (key === 'delete') {
+      newInput = input.slice(0, -1);
+    } else if (key === '.') {
+      if (!input.includes('.')) newInput = input + key;
+    } else if (key === '0' || key === '00') {
+      if (input.length > 0) newInput = input + key;
+    } else {
+      newInput = input + key;
+    }
+    
+    // Safety check for amount mode
+    const numericValue = parseFloat(newInput);
+    const maxAmount = 10000000; 
+    if (!isNaN(numericValue) && numericValue <= maxAmount) {
+        // Keep input up to two decimal places
+        if (newInput.includes('.') && newInput.split('.')[1].length > 2) {
+            // Ignore the key press if it exceeds two decimals
+        } else {
+            setInput(newInput);
+        }
+    } else if (key === 'delete' || newInput === '' || newInput === '0') {
+        setInput(newInput);
+    }
+  };
+
+  const keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', 'delete'];
+
+  return (
+    <div className="grid grid-cols-3 gap-3 mt-4 max-w-sm mx-auto">
+      {keys.map((key, index) => (
+        <button
+          key={key || `space-${index}`}
+          onClick={() => handleKeyClick(key)}
+          className={`
+            p-4 text-2xl font-light rounded-2xl transition-all active:scale-[0.98]
+            ${key === 'delete' 
+              ? 'bg-gray-700 text-red-400 hover:bg-gray-600' 
+              : 'bg-gray-800 text-white hover:bg-gray-700'
+            }
+          `}
+        >
+          {key === 'delete' ? <svg className="w-6 h-6 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg> : key}
+        </button>
+      ))}
+    </div>
+  );
+};
+
+
+// Transfer/Home View Component
+const TransferView = ({
+    activeTransferType, setActiveTransferType, transferAmount, setTransferAmount,
+    recipient, setRecipient, isKeypadVisible, setIsKeypadVisible,
+    isTransferring, handleTransfer, transferMessage, recentTransactions,
+    selectRecipient, userId, isAuthReady, setNotification, accountNumber
+}) => {
+    const formattedAmount = transferAmount ? 
+        `?${Number(transferAmount).toLocaleString('en-US', { minimumFractionDigits: transferAmount.includes('.') && transferAmount.split('.')[1].length > 0 ? transferAmount.split('.')[1].length : 2 }) || ''}` 
+        : '?0.00';
+    
+    const frequentBeneficiaries = [
+        { id: 1, name: 'Alex Johnson (P2P)', avatar: 'https://placehold.co/40x40/0A0A0A/FFFFFF?text=AJ', account: '9876543210' },
+        { id: 2, name: 'Zenith Bank', avatar: 'https://placehold.co/40x40/0A0A0A/FFFFFF?text=ZB', account: '1234567890' },
+        { id: 3, name: 'DSTV Bills', avatar: 'https://placehold.co/40x40/0A0A0A/FFFFFF?text=DV', account: '2468135790' },
+        { id: 4, name: 'New Contact', avatar: 'https://placehold.co/40x40/0A0A0A/FFFFFF?text=+' },
+    ];
+    
+    return (
+        <div className="pt-4">
+             {/* Account Details Display */}
+            <div className="mb-6 p-3 bg-gray-800 rounded-xl text-xs overflow-hidden border border-indigo-500/50">
+                <p className="font-semibold text-gray-400">Your NexusPay Account Number:</p>
+                <p className="text-xl font-bold text-indigo-300 break-all mt-1">{accountNumber || 'Fetching...'}</p>
+                <p className="text-gray-500 mt-2">User ID (for support): <span className="text-xs break-all">{userId || 'Authenticating...'}</span></p>
+            </div>
+
+            {/* Transfer Options */}
+            <h2 className="text-lg font-bold text-gray-200 mb-3">Quick Actions</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
+                <TransferOption 
+                    icon={Send} 
+                    title="P2P Transfer" 
+                    description="Send instantly to any user"
+                    isSelected={activeTransferType === 'P2P'}
+                    onClick={() => setActiveTransferType('P2P')}
+                />
+                <TransferOption 
+                    icon={CreditCard} 
+                    title="Bank Transfer" 
+                    description="External bank account"
+                    isSelected={activeTransferType === 'Bank'}
+                    onClick={() => setActiveTransferType('Bank')}
+                />
+            </div>
+
+            {/* Quick Beneficiaries (One-Tap Experience) */}
+            <div className="bg-gray-800 p-4 rounded-3xl shadow-2xl mb-8">
+                <h3 className="text-md font-semibold text-gray-300 mb-4 flex items-center">
+                    <Zap className="w-5 h-5 text-yellow-400 mr-2" />
+                    Frequent Recipients
+                </h3>
+                <div className="flex justify-between items-start space-x-4">
+                    {frequentBeneficiaries.map(user => (
+                    <BeneficiaryCard 
+                        key={user.id} 
+                        name={user.name} 
+                        avatar={user.avatar} 
+                        onClick={() => selectRecipient(user)}
+                    />
+                    ))}
+                </div>
+            </div>
+
+            {/* Amount Input and Transfer Initiation */}
+            <div className="text-center mb-8">
+                {/* Status Message */}
+                {transferMessage && (
+                    <div className={`p-3 rounded-xl mb-4 font-medium ${
+                        transferMessage.type === 'success' ? 'bg-green-600 text-white' 
+                        : transferMessage.type === 'error' ? 'bg-red-600 text-white'
+                        : 'bg-indigo-700 text-white'
+                    }`}>
+                        {transferMessage.text}
+                    </div>
+                )}
+
+                <p className="text-sm text-gray-400 mb-2">Transferring to: <span className="font-bold text-indigo-400">{recipient.name}</span></p>
+                <div 
+                    className="text-6xl font-extrabold text-white tracking-tight cursor-pointer py-4"
+                    onClick={() => setIsKeypadVisible(!isKeypadVisible)}
+                >
+                    {formattedAmount}
+                </div>
+                
+                <div className="flex items-center justify-center space-x-3 mt-4">
+                    <div className="flex-grow max-w-xs">
+                        <div className="relative">
+                            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400"/>
+                            <input 
+                                type="text"
+                                placeholder="Recipient Account Number"
+                                value={recipient.account}
+                                onChange={(e) => setRecipient({ ...recipient, account: e.target.value })}
+                                className="w-full bg-gray-700 text-white rounded-full py-3 pl-10 pr-4 focus:ring-2 focus:ring-indigo-500 focus:outline-none transition-shadow text-sm"
+                            />
+                        </div>
+                    </div>
+                    <button
+                        className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3 px-6 rounded-full shadow-lg transition duration-200 active:scale-95 flex items-center justify-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                        onClick={handleTransfer}
+                        disabled={!transferAmount || isTransferring || !recipient.account || !isAuthReady || parseFloat(transferAmount) <= 0}
+                    >
+                        {isTransferring ? (
+                            <Loader2 className="w-5 h-5 animate-spin" />
+                        ) : (
+                            <Send className="w-5 h-5" />
+                        )}
+                        <span>{isTransferring ? 'Processing...' : 'Confirm Send'}</span>
+                    </button>
+                </div>
+            </div>
+            
+            {/* Keypad */}
+            {isKeypadVisible && (
+                <Keypad 
+                    input={transferAmount} 
+                    setInput={setTransferAmount} 
+                />
+            )}
+            
+            {/* Recent Transactions List (from Firestore) */}
+            <div className="mt-10 mb-20">
+                <h3 className="text-lg font-bold text-gray-200 mb-4">Recent Transactions ({recentTransactions.length})</h3>
+                <div className="space-y-3">
+                    {recentTransactions.map(tx => (
+                        <div key={tx.id} className="flex justify-between items-center p-4 bg-gray-800 rounded-xl shadow-inner border border-gray-700">
+                            <div className="flex items-center">
+                                <div className={`text-xs font-semibold px-2 py-0.5 rounded-full ${getCategoryColor(tx.category)} mr-3 border`}>
+                                    {tx.category || 'Uncategorized'}
+                                </div>
+                                <div>
+                                    <p className="text-sm font-semibold text-white">{tx.recipient}</p>
+                                    <p className="text-xs text-gray-500 mt-0.5">
+                                        {(tx.timestamp && tx.timestamp.toDate) ? new Date(tx.timestamp.toDate()).toLocaleTimeString() : 'N/A'}
+                                    </p>
+                                </div>
+                            </div>
+                            <p className={`text-sm font-bold text-red-400`}>
+                                - ?{tx.amount.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                            </p>
+                        </div>
+                    ))}
+                    {recentTransactions.length === 0 && isAuthReady && (
+                        <p className="text-center text-gray-500 p-4 bg-gray-800 rounded-xl border border-gray-700">No transactions found. Try making a transfer!</p>
+                    )}
+                    {!isAuthReady && (
+                        <p className="text-center text-gray-500 p-4 bg-gray-800 rounded-xl flex items-center justify-center space-x-2 border border-gray-700">
+                            <Loader2 className="w-4 h-4 animate-spin"/><span>Connecting to database...</span>
+                        </p>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+};
+
+// AI Customer Care View Component (Unchanged)
+const AICustomerCare = ({ userId }) => {
+    const [chatHistory, setChatHistory] = useState([
+        { role: 'model', parts: [{ text: "Hello! I am NexusPay's AI Customer Care agent. How can I assist you with your P2P transfers or account inquiries today?" }] }
+    ]);
+    const [input, setInput] = useState('');
+    const [isTyping, setIsTyping] = useState(false);
+    const messagesEndRef = useRef(null);
+
+    const scrollToBottom = () => {
+        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    };
+
+    useEffect(scrollToBottom, [chatHistory]);
+
+    const handleSend = async (e) => {
+        e.preventDefault();
+        if (!input.trim() || isTyping) return;
+
+        const userMessage = { role: 'user', parts: [{ text: input.trim() }] };
+        const newHistory = [...chatHistory, userMessage];
+
+        setChatHistory(newHistory);
+        setInput('');
+        setIsTyping(true);
+
+        try {
+            const aiResponseText = await handleChatWithGemini(newHistory);
+            const aiMessage = { role: 'model', parts: [{ text: aiResponseText }] };
+            setChatHistory(prev => [...prev, aiMessage]);
+        } catch (error) {
+            console.error("AI Chat error:", error);
+            const errorMessage = { role: 'model', parts: [{ text: "I apologize, an error occurred while processing your request. Please try again." }] };
+            setChatHistory(prev => [...prev, errorMessage]);
+        } finally {
+            setIsTyping(false);
+        }
+    };
+
+    const ChatMessage = ({ message }) => (
+        <div className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'} mb-4`}>
+            <div className={`max-w-[75%] rounded-2xl p-3 shadow-lg text-sm ${
+                message.role === 'user' 
+                ? 'chat-bubble-user text-white ml-auto' 
+                : 'chat-bubble-ai text-gray-200 mr-auto'
+            }`}>
+                <p>{message.parts[0].text}</p>
+            </div>
+        </div>
+    );
+
+    return (
+        <div className="h-[75vh] flex flex-col pt-4">
+            <h2 className="text-2xl font-bold text-gray-100 mb-4 flex items-center">
+                <Users className="w-6 h-6 text-indigo-400 mr-2"/>
+                AI Customer Care
+            </h2>
+            
+            {/* Chat Window */}
+            <div className="flex-grow bg-gray-800 rounded-xl p-4 overflow-y-auto custom-scrollbar shadow-inner mb-4 border border-gray-700">
+                {chatHistory.map((msg, index) => (
+                    <ChatMessage key={index} message={msg} />
+                ))}
+                
+                {isTyping && (
+                    <div className="flex justify-start mb-4">
+                        <div className="chat-bubble-ai text-gray-400 mr-auto rounded-2xl p-3 shadow-lg text-sm">
+                            <Loader2 className="w-4 h-4 inline animate-spin mr-2" /> 
+                            AI Agent is typing...
+                        </div>
+                    </div>
+                )}
+                
+                <div ref={messagesEndRef} />
+            </div>
+
+            {/* Input Field */}
+            <form onSubmit={handleSend} className="flex space-x-2">
+                <input
+                    type="text"
+                    value={input}
+                    onChange={(e) => setInput(e.target.value)}
+                    placeholder="Ask a question about your account or transfers..."
+                    className="flex-grow bg-gray-700 text-white rounded-full py-3 px-5 focus:ring-2 focus:ring-indigo-500 focus:outline-none transition-shadow text-sm"
+                    disabled={isTyping}
+                />
+                <button
+                    type="submit"
+                    className="bg-indigo-600 hover:bg-indigo-500 text-white p-3 rounded-full shadow-lg transition duration-200 active:scale-95 disabled:opacity-50"
+                    disabled={isTyping || !input.trim()}
+                >
+                    <Send className="w-6 h-6" />
+                </button>
+            </form>
+        </div>
+    );
+};
+
+
+// Spending Analysis View Component (Unchanged)
+const SpendingAnalysisView = ({ recentTransactions, isAuthReady }) => {
+    
+    // Calculate Summary Data
+    const analysisData = useMemo(() => {
+        const spendingMap = {};
+        let totalSpent = 0;
+
+        recentTransactions.forEach(tx => {
+            if (tx.amount && tx.amount > 0) { 
+                const category = tx.category || 'Other';
+                const amount = parseFloat(tx.amount);
+                
+                totalSpent += amount;
+
+                if (spendingMap[category]) {
+                    spendingMap[category] += amount;
+                } else {
+                    spendingMap[category] = amount;
+                }
+            }
+        });
+
+        const categories = Object.keys(spendingMap).map(category => {
+            const amount = spendingMap[category];
+            const percentage = totalSpent > 0 ? (amount / totalSpent) * 100 : 0;
+            return {
+                category,
+                amount,
+                percentage,
+                colorClass: getCategoryColor(category).split(' ')[0].replace('text-', 'bg-'),
+            };
+        }).sort((a, b) => b.amount - a.amount); 
+
+        return { categories, totalSpent };
+    }, [recentTransactions]);
+
+    const { categories, totalSpent } = analysisData;
+
+    const formattedTotal = totalSpent.toLocaleString('en-US', { minimumFractionDigits: 2 });
+    
+    const maxSpent = categories.length > 0 ? categories[0].amount : 0;
+
+    return (
+        <div className="pt-4">
+            <h2 className="text-2xl font-bold text-gray-100 mb-6 flex items-center">
+                <PieChart className="w-6 h-6 text-indigo-400 mr-2"/>
+                Spending Analysis
+            </h2>
+            
+            <div className="bg-gray-800 p-6 rounded-2xl shadow-xl mb-8 border border-gray-700">
+                <p className="text-sm text-gray-400 font-medium">Total Expenditure</p>
+                <p className="text-4xl font-extrabold text-red-400 mt-1">?{formattedTotal}</p>
+                <p className="text-xs text-gray-500 mt-1">Based on {recentTransactions.length} tracked transactions.</p>
+            </div>
+
+            {categories.length === 0 && isAuthReady ? (
+                <div className="text-center p-8 bg-gray-800 rounded-xl text-gray-400 border border-gray-700">
+                    <PieChart className="w-10 h-10 mx-auto text-gray-600 mb-3" />
+                    <p>No spending data yet. Make a few transfers to see your analysis!</p>
+                </div>
+            ) : categories.length === 0 && !isAuthReady ? (
+                 <p className="text-center text-gray-500 p-4 bg-gray-800 rounded-xl flex items-center justify-center space-x-2 border border-gray-700">
+                    <Loader2 className="w-4 h-4 animate-spin"/><span>Connecting to database...</span>
+                </p>
+            ) : (
+                <div className="space-y-6">
+                    <h3 className="text-lg font-bold text-gray-200">Spending by Category</h3>
+
+                    {/* Simple Bar Chart Visualization */}
+                    <div className="space-y-4">
+                        {categories.map((item, index) => {
+                            const barWidth = maxSpent > 0 ? (item.amount / maxSpent) * 100 : 0;
+                            return (
+                                <div key={item.category} className="flex flex-col">
+                                    <div className="flex justify-between items-center mb-1">
+                                        <div className={`flex items-center text-sm font-semibold p-1 rounded ${getCategoryColor(item.category)} border-0`}>
+                                            {item.category}
+                                        </div>
+                                        <span className="text-sm font-bold text-white">
+                                            ?{item.amount.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                                        </span>
+                                    </div>
+                                    <div className="w-full bg-gray-700 rounded-full h-2.5">
+                                        <div 
+                                            className={`h-2.5 rounded-full transition-all duration-500 ${item.colorClass}`}
+                                            style={{ width: `${barWidth}%` }}
+                                            title={`${item.percentage.toFixed(1)}%`}
+                                        ></div>
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+            )}
+            <div className="h-20" /> {/* Spacer for footer nav */}
+        </div>
+    );
+};
+
+
+// Reusable components (Unchanged)
+const TransferOption = ({ icon: Icon, title, description, isSelected, onClick }) => (
+  <div
+    className={`flex items-center p-4 rounded-xl transition-all cursor-pointer ${
+      isSelected ? 'bg-indigo-600/20 ring-2 ring-indigo-500' : 'bg-gray-700 hover:bg-gray-600'
+    } shadow-md`}
+    onClick={onClick}
+  >
+    <div className={`p-2 rounded-full ${isSelected ? 'bg-indigo-500' : 'bg-gray-800'}`}>
+      <Icon className="w-6 h-6 text-white" />
+    </div>
+    <div className="ml-4 flex-grow">
+      <p className="text-white font-semibold text-sm">{title}</p>
+      <p className="text-gray-400 text-xs mt-0.5">{description}</p>
+    </div>
+    <ChevronRight className="w-5 h-5 text-gray-400" />
+  </div>
+);
+
+const BeneficiaryCard = ({ name, avatar, onClick }) => (
+  <div 
+    className="flex flex-col items-center space-y-1.5 w-1/4 flex-shrink-0 cursor-pointer hover:opacity-80 transition-opacity"
+    onClick={onClick}
+  >
+    <div className="w-14 h-14 bg-gray-600 rounded-full overflow-hidden border-2 border-indigo-500/0 hover:border-indigo-500 transition-colors duration-200">
+      <img src={avatar} alt={name} className="w-full h-full object-cover" />
+    </div>
+    <p className="text-xs text-gray-300 font-medium text-center truncate w-full">{name.split(' ')[0]}</p>
+  </div>
+);
+
+const App = () => {
+    // UI State for Navigation
+    const [currentView, setCurrentView] = useState('transfer'); 
+    
+    // --- AUTH & BALANCE STATE ---
+    const [authView, setAuthView] = useState('login'); // 'login', 'signup', 'forgot_password'
+    const [liveBalance, setLiveBalance] = useState(0);
+    const [accountNumber, setAccountNumber] = useState(null); // New state for assigned account number
+
+    // Transfer State
+    const [activeTransferType, setActiveTransferType] = useState('P2P');
+    const [transferAmount, setTransferAmount] = useState('');
+    const [recipient, setRecipient] = useState({ name: 'Recipient Account', account: '' });
+    const [isKeypadVisible, setIsKeypadVisible] = useState(true);
+    const [isTransferring, setIsTransferring] = useState(false);
+    const [transferMessage, setTransferMessage] = useState(null);
+
+    // Notification State
+    const [notification, setNotification] = useState(null);
+
+    // Firestore & Auth State
+    const [db, setDb] = useState(null);
+    const [auth, setAuth] = useState(null);
+    const [userId, setUserId] = useState(null);
+    const [isAuthReady, setIsAuthReady] = useState(false); // Tracks if Firebase is initialized/ready
+    const [isAuthenticated, setIsAuthenticated] = useState(false); // Tracks if a user is logged in
+    
+    // Real-time Transaction List (from Firestore)
+    const [recentTransactions, setRecentTransactions] = useState([]);
+
+    // --- FIREBASE LOGIC ---
+    
+    // 1. Firebase Initialization and Authentication Listener
+    useEffect(() => {
+        setLogLevel('debug'); 
+
+        if (Object.keys(firebaseConfig).length === 0) {
+            console.error("Firebase config is missing or empty.");
+            setIsAuthReady(true);
+            return;
+        }
+
+        try {
+            const app = initializeApp(firebaseConfig); 
+            const authInstance = getAuth(app);
+            const dbInstance = getFirestore(app);
+
+            setAuth(authInstance);
+            setDb(dbInstance);
+
+            const unsubscribe = window.onAuthStateChanged(authInstance, async (user) => {
+                if (user) {
+                    setUserId(user.uid);
+                    setIsAuthenticated(true);
+                    setAuthView('login'); // If logged in, set default view in case of sign-out/back button
+                } else {
+                    setUserId(null);
+                    setIsAuthenticated(false);
+                    setLiveBalance(0);
+                    setAccountNumber(null);
+                    setRecentTransactions([]);
+                    setAuthView('login'); // Show login screen if not authenticated
+                }
+                // Auth is ready once the initial check is complete
+                setIsAuthReady(true); 
+            });
+
+            return () => unsubscribe();
+        } catch (error) {
+            console.error("Error initializing Firebase:", error);
+            setIsAuthReady(true);
+        }
+    }, []);
+
+    // 2. Data Listeners (Balance and Profile - Private Data)
+    useEffect(() => {
+        if (!isAuthenticated || !db || !userId) {
+            setLiveBalance(0);
+            setAccountNumber(null);
+            return;
+        }
+
+        const balancePath = `artifacts/${appId}/users/${userId}/user_data/balance`;
+        const profilePath = `artifacts/${appId}/users/${userId}/user_data/profile`;
+        const balanceDocRef = window.doc(db, balancePath);
+        const profileDocRef = window.doc(db, profilePath);
+
+
+        // Check if balance document exists (only relevant for newly authenticated users)
+        window.getDoc(balanceDocRef).then(docSnap => {
+            if (!docSnap.exists()) {
+                // This case should be rare if signup worked correctly, but handles edge cases
+                window.setDoc(balanceDocRef, { balance: STARTING_BALANCE, lastUpdated: new Date() }, { merge: true })
+                    .catch(e => console.error("Error setting initial balance:", e));
+            }
+        });
+        
+        // 2.1. Real-time Balance Listener
+        const unsubscribeBalance = window.onSnapshot(balanceDocRef, (docSnap) => {
+            if (docSnap.exists()) {
+                setLiveBalance(docSnap.data().balance || 0);
+            } else {
+                setLiveBalance(0); 
+            }
+        }, (error) => {
+            console.error("Error fetching live balance:", error);
+        });
+
+        // 2.2. Real-time Profile Listener (for Account Number)
+         const unsubscribeProfile = window.onSnapshot(profileDocRef, (docSnap) => {
+            if (docSnap.exists()) {
+                setAccountNumber(docSnap.data().accountNumber || 'N/A');
+            } else {
+                setAccountNumber('N/A (Missing Profile)');
+            }
+        }, (error) => {
+            console.error("Error fetching profile data:", error);
+        });
+
+
+        return () => {
+            unsubscribeBalance();
+            unsubscribeProfile();
+        }; 
+    }, [isAuthenticated, db, userId]);
+
+
+    // 3. Real-time Transaction Listener (Public Data)
+    useEffect(() => {
+        if (!isAuthenticated || !db || !userId) {
+            setRecentTransactions([]);
+            return;
+        }
+
+        const collectionPath = `artifacts/${appId}/public/data/transactions`;
+        const transactionsCollection = window.collection(db, collectionPath);
+        
+        // Only fetch transactions where the current user is the sender
+        const q = window.query(transactionsCollection, window.where("senderId", "==", userId));
+
+        const unsubscribe = window.onSnapshot(q, (snapshot) => {
+            const transactionsList = snapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data(),
+                amount: parseFloat(doc.data().amount) 
+            }));
+            transactionsList.sort((a, b) => (b.timestamp?.toDate() || 0) - (a.timestamp?.toDate() || 0));
+            setRecentTransactions(transactionsList);
+        }, (error) => {
+            console.error("Error fetching transactions:", error);
+        });
+
+        return () => unsubscribe();
+    }, [isAuthenticated, db, userId]);
+
+    // 4. Save Transaction to Firestore (Public Record)
+    const saveTransaction = async (amount, recipientName, recipientAccount, category, confidence) => {
+        if (!db || !userId) return;
+
+        try {
+            const transactionData = {
+                senderId: userId,
+                recipient: recipientName,
+                account: recipientAccount,
+                amount: parseFloat(amount),
+                currency: 'NGN',
+                type: activeTransferType,
+                status: 'Completed',
+                timestamp: new Date(),
+                description: `${activeTransferType} transfer to ${recipientName} (${recipientAccount}) of ?${amount}.`,
+                category: category, 
+                confidence: confidence,
+            };
+
+            const collectionPath = `artifacts/${appId}/public/data/transactions`;
+            await window.addDoc(window.collection(db, collectionPath), transactionData);
+
+        } catch (e) {
+            console.error("Error saving transaction: ", e);
+            throw new Error("Database record failed.");
+        }
+    };
+
+    // 5. Handle Transfer Logic (Mock API Integration)
+    const handleTransfer = async () => {
+        const amount = parseFloat(transferAmount);
+        if (!transferAmount || amount <= 0 || !recipient.account) {
+            setTransferMessage({ type: 'error', text: 'Please enter a valid amount and recipient account.' });
+            return;
+        }
+        
+        // --- MOCK API: INSUFFICIENT FUNDS CHECK ---
+        if (amount > liveBalance) {
+            setTransferMessage({ type: 'error', text: `Transfer failed: Insufficient funds. Available: ?${liveBalance.toLocaleString()}.` });
+            setNotification({ type: 'alert', message: `Transfer failed: Insufficient funds (?${liveBalance.toLocaleString()}) for ?${amount.toLocaleString()}.` });
+            return;
+        }
+
+        setIsTransferring(true);
+        setTransferMessage({ type: 'info', text: 'Transfer initiated... Authenticating and Categorizing.' });
+
+        try {
+            // Step 1: Categorize using LLM
+            const transactionDescription = `${activeTransferType} transfer to ${recipient.name} (${recipient.account}) for ?${amount}.`;
+            const categorizationResult = await categorizeTransactionWithGemini(transactionDescription);
+            const finalCategory = categorizationResult.category;
+            
+            // Step 2: Simulate Bank API Call Delay 
+            setTransferMessage({ type: 'info', text: `Processing bank transaction via mock API for ${recipient.name}...` });
+            await new Promise(resolve => setTimeout(resolve, 2000)); 
+
+            // Step 3: Update Firestore (Balance & Transaction Record)
+            
+            // --- Private Write: Update Balance (Decrement) ---
+            const newBalance = liveBalance - amount;
+            const balancePath = `artifacts/${appId}/users/${userId}/user_data/balance`;
+            const balanceDocRef = window.doc(db, balancePath);
+
+            await window.updateDoc(balanceDocRef, { 
+                balance: newBalance,
+                lastUpdated: new Date()
+            });
+            
+            // --- Public Write: Record Transaction ---
+            await saveTransaction(amount, recipient.name, recipient.account, finalCategory, categorizationResult.confidence);
+
+            const formattedAmount = Number(amount).toLocaleString('en-US', { minimumFractionDigits: 2 });
+            setTransferMessage({ type: 'success', text: `Success! ?${formattedAmount} sent to ${recipient.name}. Categorized as: ${finalCategory}.` });
+            setNotification({ type: 'success', message: `Transaction Complete! ?${formattedAmount} sent.` });
+
+            // Reset state after success
+            setTransferAmount('');
+            setRecipient({ name: 'Recipient Account', account: '' });
+            
+        } catch (error) {
+            console.error("Transfer process failed:", error);
+            setTransferMessage({ type: 'error', text: `Transfer failed: ${error.message || 'Unknown error during API/database update.'}` });
+            setNotification({ type: 'security', message: "Transfer failed due to a system error. Funds secured." });
+        } finally {
+            setIsTransferring(false);
+        }
+    };
+
+    // 6. Handle Sign Out
+    const handleSignOut = async () => {
+        if (auth) {
+            try {
+                // Clear the current user session
+                await window.signOut(auth); 
+                setNotification({ type: 'info', message: 'You have been successfully signed out.' });
+            } catch (e) {
+                console.error("Sign Out Error:", e);
+                setTransferMessage({ type: 'error', text: 'Sign out failed.' });
+            }
+        }
+    };
+
+    const selectRecipient = (user) => {
+        setRecipient({ 
+            name: user.name.replace(/\s\(.*\)/, ''),
+            account: user.account 
+        });
+    };
+    
+    // Function to handle successful authentication from any auth view
+    const handleAuthSuccess = (uid) => {
+        setUserId(uid);
+        setIsAuthenticated(true);
+        // The onAuthStateChanged listener will handle the full state update
+    };
+
+    // --- RENDERING ---
+
+    // RENDER AUTH SCREENS IF NOT AUTHENTICATED OR FIREBASE ISN'T READY
+    if (!isAuthReady || !isAuthenticated) {
+        if (!isAuthReady) {
+            return (
+                <div className="auth-screen">
+                    <Loader2 className="w-10 h-10 animate-spin text-indigo-500 mb-4" />
+                    <p className="text-gray-400">Connecting to NexusPay services...</p>
+                </div>
+            );
+        }
+
+        switch (authView) {
+            case 'signup':
+                return <SignupView onAuthSuccess={handleAuthSuccess} setView={setAuthView} auth={auth} db={db} appId={appId} setNotification={setNotification} />;
+            case 'forgot_password':
+                return <ForgotPasswordView setView={setAuthView} auth={auth} />;
+            case 'login':
+            default:
+                return <LoginView onAuthSuccess={handleAuthSuccess} setView={setAuthView} auth={auth} />;
+        }
+    }
+    
+    // RENDER MAIN APP VIEWS
+    let mainContent;
+    switch (currentView) {
+        case 'transfer':
+            mainContent = (
+                <TransferView
+                    activeTransferType={activeTransferType} setActiveTransferType={setActiveTransferType}
+                    transferAmount={transferAmount} setTransferAmount={setTransferAmount}
+                    recipient={recipient} setRecipient={setRecipient}
+                    isKeypadVisible={isKeypadVisible} setIsKeypadVisible={setIsKeypadVisible}
+                    isTransferring={isTransferring} handleTransfer={handleTransfer}
+                    transferMessage={transferMessage} recentTransactions={recentTransactions}
+                    selectRecipient={selectRecipient} userId={userId} isAuthReady={isAuthReady}
+                    setNotification={setNotification} accountNumber={accountNumber}
+                />
+            );
+            break;
+        case 'analysis':
+            mainContent = (
+                <SpendingAnalysisView 
+                    recentTransactions={recentTransactions} 
+                    isAuthReady={isAuthReady} 
+                />
+            );
+            break;
+        case 'care':
+            mainContent = (
+                <AICustomerCare userId={userId} />
+            );
+            break;
+        default:
+            mainContent = <TransferView />;
+    }
+
+    return (
+        <div className="min-h-screen bg-gray-900 text-white p-4 sm:p-6 font-sans">
+            <AppNotification notification={notification} setNotification={setNotification} />
+
+            <div className="max-w-xl mx-auto">
+                
+                {/* Header and User Info */}
+                <header className="flex justify-between items-center mb-6">
+                    <h1 className="text-2xl font-extrabold text-indigo-400">NexusPay</h1>
+                    <div className="flex items-center space-x-4">
+                        {/* Live Balance Card */}
+                        <div className="flex items-center space-x-2 bg-gray-800 p-2 rounded-full pr-3 shadow-lg">
+                            <Wallet className="w-5 h-5 text-green-400" />
+                            <span className="text-sm font-semibold text-gray-300">
+                                {isAuthenticated ? `?${liveBalance.toLocaleString('en-US', { minimumFractionDigits: 2 })}` : '?0.00'}
+                            </span>
+                        </div>
+                        {/* Sign Out Button */}
+                        <button
+                            onClick={handleSignOut}
+                            className="bg-red-600 hover:bg-red-500 p-2 rounded-full text-white transition-colors shadow-lg"
+                            title="Sign Out"
+                            disabled={!isAuthenticated}
+                        >
+                            <LogOut className="w-5 h-5" />
+                        </button>
+                    </div>
+                </header>
+
+                {/* Main Content */}
+                {mainContent}
+
+                {/* Footer Navigation */}
+                <nav className="fixed bottom-0 left-0 right-0 bg-gray-800 border-t border-gray-700 p-3 shadow-2xl rounded-t-xl max-w-xl mx-auto">
+                    <div className="flex justify-around">
+                        <button 
+                            onClick={() => setCurrentView('transfer')}
+                            className={`flex flex-col items-center p-2 rounded-xl transition-colors ${currentView === 'transfer' ? 'text-indigo-400' : 'text-gray-400 hover:text-white'}`}
+                        >
+                            <Home className="w-6 h-6" />
+                            <span className="text-xs font-medium mt-1">Home</span>
+                        </button>
+                        <button 
+                            onClick={() => setCurrentView('analysis')}
+                            className={`flex flex-col items-center p-2 rounded-xl transition-colors ${currentView === 'analysis' ? 'text-indigo-400' : 'text-gray-400 hover:text-white'}`}
+                        >
+                            <PieChart className="w-6 h-6" />
+                            <span className="text-xs font-medium mt-1">Analysis</span>
+                        </button>
+                        <button 
+                            onClick={() => setCurrentView('care')}
+                            className={`flex flex-col items-center p-2 rounded-xl transition-colors ${currentView === 'care' ? 'text-indigo-400' : 'text-gray-400 hover:text-white'}`}
+                        >
+                            <MessageSquare className="w-6 h-6" />
+                            <span className="text-xs font-medium mt-1">AI Care</span>
+                        </button>
+                    </div>
+                </nav>
+
+            </div>
+        </div>
+    );
+};
+
+// Render the App component
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+
+</script>
+<!-- Firebase Core and Firestore libraries (required for the functions used above) -->
+<script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+    import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, signOut, createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+    import { getFirestore, doc, getDoc, setDoc, updateDoc, addDoc, onSnapshot, collection, query, where, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+    
+    // Export globally for the <script type="text/babel"> block to access
+    window.firebaseApp = initializeApp(window.firebaseConfig);
+    window.firebaseAuth = getAuth(window.firebaseApp);
+    window.firebaseDb = getFirestore(window.firebaseApp);
+
+    // Re-expose modules/functions needed in the App component's useEffect hooks
+    window.initializeApp = initializeApp;
+    window.getAuth = getAuth;
+    window.onAuthStateChanged = onAuthStateChanged;
+    window.signOut = signOut; 
+    window.createUserWithEmailAndPassword = createUserWithEmailAndPassword; // New Auth Function
+    window.signInWithEmailAndPassword = signInWithEmailAndPassword; // New Auth Function
+    window.sendPasswordResetEmail = sendPasswordResetEmail; // New Auth Function
+
+    window.getFirestore = getFirestore;
+    window.addDoc = addDoc;
+    window.onSnapshot = onSnapshot;
+    window.collection = collection;
+    window.setLogLevel = setLogLevel;
+    
+    // Firestore functions
+    window.doc = doc;
+    window.getDoc = getDoc;
+    window.setDoc = setDoc;
+    window.updateDoc = updateDoc;
+    window.query = query;
+    window.where = where;
+
+    // We no longer need anonymous sign-in logic here, as we rely on email/password flow
+</script>
+
+</body>
+</html>
